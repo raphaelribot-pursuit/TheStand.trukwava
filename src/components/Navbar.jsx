@@ -4,8 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Phone, Menu, X, Heart, Shield, BookOpen, Home, Search, FileText, MessageCircle, Sparkles } from 'lucide-react';
 
 const navLinks = [
-  { to: '/', label: 'Home', icon: Home },
-  { to: '/wellness', label: 'Wellness Check', icon: Sparkles },
+  { to: '/', label: 'Wellness Check', icon: Sparkles },
+  { to: '/home', label: 'Home', icon: Home },
   { to: '/chat', label: 'Get Help', icon: MessageCircle },
   { to: '/crisis', label: 'Crisis Lines', icon: Phone },
   { to: '/resources', label: 'Resources', icon: Search },

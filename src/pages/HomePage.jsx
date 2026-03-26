@@ -93,7 +93,7 @@ export default function HomePage() {
             className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-4"
           >
             <Link
-              to="/wellness"
+              to="/"
               className="flex items-center gap-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-sm font-medium transition-all text-slate-300"
             >
               <Sparkles size={15} />
