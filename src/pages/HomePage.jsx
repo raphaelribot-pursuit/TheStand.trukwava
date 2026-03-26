@@ -83,11 +83,27 @@ export default function HomePage() {
               Chat — Get Help Now
               <ArrowRight size={16} />
             </Link>
+          </motion.div>
+
+          <motion.div
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            custom={4}
+            className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-4"
+          >
+            <Link
+              to="/wellness"
+              className="flex items-center gap-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-sm font-medium transition-all text-slate-300"
+            >
+              <Sparkles size={15} />
+              Take a Wellness Check-In
+            </Link>
             <Link
               to="/resources"
-              className="flex items-center gap-2 px-6 py-3.5 bg-white/10 hover:bg-white/15 border border-white/10 rounded-full text-base font-semibold transition-all"
+              className="flex items-center gap-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-sm font-medium transition-all text-slate-300"
             >
-              <Search size={18} />
+              <Search size={15} />
               Browse Resources
             </Link>
           </motion.div>
