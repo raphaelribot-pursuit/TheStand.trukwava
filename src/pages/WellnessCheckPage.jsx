@@ -4,14 +4,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Volume2, VolumeX, ArrowRight, ArrowLeft, RotateCcw,
   Phone, Heart, Download, Shield, ExternalLink, MessageCircle,
-  Sparkles, AlertTriangle, CheckCircle2, Lock
+  Sparkles, AlertTriangle, CheckCircle2, Lock, Mic, MicOff, Settings
 } from 'lucide-react';
 import {
   phq9Questions, gad7Questions, frequencyOptions, difficultyQuestion,
   scorePHQ9, scoreGAD7, personaTransitions
 } from '../data/assessments';
 import { crisisHotlines, nycResources } from '../data/resources';
-import { useSpeech } from '../hooks/useSpeech';
+import { useSpeech, useSpeechRecognition, matchSpokenAnswer, matchSpokenDifficulty } from '../hooks/useSpeech';
+import VoiceSettings from '../components/VoiceSettings';
 
 // ── Sage Persona Avatar ─────────────────────────────────────────────
 function SageAvatar({ speaking, size = 'lg' }) {
@@ -21,9 +22,8 @@ function SageAvatar({ speaking, size = 'lg' }) {
 
   return (
     <div className={`relative ${sizeClasses} flex items-center justify-center`}>
-      {/* Breathing ring */}
       <motion.div
-        className={`absolute inset-0 rounded-full bg-gradient-to-br from-violet-500/30 via-fuchsia-500/20 to-cyan-500/30`}
+        className="absolute inset-0 rounded-full bg-gradient-to-br from-violet-500/30 via-fuchsia-500/20 to-cyan-500/30"
         animate={{
           scale: speaking ? [1, 1.15, 1] : [1, 1.08, 1],
           opacity: speaking ? [0.6, 0.9, 0.6] : [0.3, 0.5, 0.3],
@@ -34,11 +34,9 @@ function SageAvatar({ speaking, size = 'lg' }) {
           ease: 'easeInOut',
         }}
       />
-      {/* Inner circle */}
       <div className={`relative ${innerSize} rounded-full bg-gradient-to-br from-violet-600 via-fuchsia-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-violet-500/25`}>
         <span className={`${textSize} select-none`}>🌿</span>
       </div>
-      {/* Speaking indicator */}
       {speaking && (
         <motion.div
           className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-slate-950 flex items-center justify-center"
@@ -54,7 +52,6 @@ function SageAvatar({ speaking, size = 'lg' }) {
 
 // ── Message Bubble ──────────────────────────────────────────────────
 function SageMessage({ text, delay = 0 }) {
-  // Render markdown bold
   const rendered = text.split('\n').map((line, i) => {
     const parts = line.split(/(\*\*[^*]+\*\*)/g).map((part, j) => {
       if (part.startsWith('**') && part.endsWith('**')) {
@@ -80,13 +77,56 @@ function SageMessage({ text, delay = 0 }) {
   );
 }
 
+// ── Mic Button ──────────────────────────────────────────────────────
+function MicButton({ isListening, isSupported, onStart, onStop, transcript }) {
+  if (!isSupported) return null;
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <button
+        onClick={isListening ? onStop : onStart}
+        className={`relative flex items-center justify-center w-14 h-14 rounded-full transition-all ${
+          isListening
+            ? 'bg-red-500 shadow-lg shadow-red-500/30'
+            : 'bg-white/10 hover:bg-white/15 border border-white/10'
+        }`}
+      >
+        {isListening ? (
+          <>
+            <motion.div
+              className="absolute inset-0 rounded-full bg-red-500/30"
+              animate={{ scale: [1, 1.4, 1], opacity: [0.5, 0, 0.5] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            />
+            <Mic size={22} className="text-white relative z-10" />
+          </>
+        ) : (
+          <Mic size={20} className="text-slate-400" />
+        )}
+      </button>
+      <span className="text-xs text-slate-500">
+        {isListening ? 'Listening...' : 'Tap to speak'}
+      </span>
+      {transcript && isListening && (
+        <motion.div
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-300 max-w-xs text-center"
+        >
+          "{transcript}"
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
 // ── Phase: Welcome ──────────────────────────────────────────────────
-function WelcomePhase({ onStart, speak }) {
+function WelcomePhase({ onStart, speak, isSpeaking }) {
   const messages = personaTransitions.welcome;
 
   useEffect(() => {
     messages.forEach((msg, i) => {
-      setTimeout(() => speak(msg), i * 2500);
+      setTimeout(() => speak(msg), i * 800);
     });
   }, []);
 
@@ -97,7 +137,7 @@ function WelcomePhase({ onStart, speak }) {
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 0.6 }}
       >
-        <SageAvatar size="lg" />
+        <SageAvatar size="lg" speaking={isSpeaking} />
       </motion.div>
 
       <motion.h2
@@ -146,14 +186,50 @@ function WelcomePhase({ onStart, speak }) {
   );
 }
 
-// ── Phase: Question ─────────────────────────────────────────────────
+// ── Phase: Question (with mic) ──────────────────────────────────────
 function QuestionPhase({
   question, questionIndex, totalQuestions, sectionLabel,
   onAnswer, answer, onBack, canGoBack, speak, speaking,
+  recognition, isDifficulty,
 }) {
+  const {
+    isListening, transcript, isSupported, startListening, stopListening, resetTranscript,
+  } = recognition;
+
+  const lastProcessed = useRef('');
+
   useEffect(() => {
     speak(question.conversational);
+    resetTranscript();
+    lastProcessed.current = '';
   }, [question.id]);
+
+  // Process speech recognition results
+  useEffect(() => {
+    if (!transcript || transcript === lastProcessed.current) return;
+
+    // Wait for silence (final result)
+    if (!isListening && transcript) {
+      lastProcessed.current = transcript;
+      const match = isDifficulty
+        ? matchSpokenDifficulty(transcript)
+        : matchSpokenAnswer(transcript);
+
+      if (match !== null) {
+        // Confirm what we heard
+        const label = isDifficulty
+          ? difficultyQuestion.options.find(o => o.value === match)?.label
+          : frequencyOptions.find(o => o.value === match)?.label;
+        speak(`I heard: ${label}. Moving on.`);
+        setTimeout(() => onAnswer(question.id, match), 800);
+      } else {
+        speak("I didn't quite catch that. You can try again or tap an option.");
+      }
+      resetTranscript();
+    }
+  }, [isListening, transcript]);
+
+  const options = isDifficulty ? difficultyQuestion.options : frequencyOptions;
 
   return (
     <div className="w-full max-w-lg mx-auto">
@@ -194,7 +270,7 @@ function QuestionPhase({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.3 }}
-        className="text-xs text-slate-500 italic ml-13 mb-6 pl-13"
+        className="text-xs text-slate-500 italic mb-6"
         style={{ marginLeft: '3.25rem' }}
       >
         {question.gentle}
@@ -223,6 +299,30 @@ function QuestionPhase({
         </motion.div>
       )}
 
+      {/* Mic button — speak your answer */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.4 }}
+        className="flex justify-center mb-6"
+        style={{ marginLeft: '3.25rem' }}
+      >
+        <MicButton
+          isListening={isListening}
+          isSupported={isSupported}
+          onStart={startListening}
+          onStop={stopListening}
+          transcript={transcript}
+        />
+      </motion.div>
+
+      {/* Divider */}
+      <div className="flex items-center gap-3 mb-4" style={{ marginLeft: '3.25rem' }}>
+        <div className="flex-1 h-px bg-white/5" />
+        <span className="text-xs text-slate-600">or tap your answer</span>
+        <div className="flex-1 h-px bg-white/5" />
+      </div>
+
       {/* Answer options */}
       <motion.div
         key={`opts-${question.id}`}
@@ -232,12 +332,13 @@ function QuestionPhase({
         className="space-y-2"
         style={{ marginLeft: '3.25rem' }}
       >
-        {frequencyOptions.map((opt) => {
-          const selected = answer === opt.value;
+        {options.map((opt) => {
+          const val = isDifficulty ? opt.value : opt.value;
+          const selected = answer === val;
           return (
             <button
-              key={opt.value}
-              onClick={() => onAnswer(question.id, opt.value)}
+              key={val}
+              onClick={() => onAnswer(question.id, val)}
               className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left transition-all ${
                 selected
                   ? 'border-violet-500/40 bg-violet-500/10 text-white'
@@ -251,7 +352,7 @@ function QuestionPhase({
               </div>
               <div>
                 <div className="text-sm font-medium">{opt.label}</div>
-                <div className="text-xs text-slate-500">{opt.description}</div>
+                {opt.description && <div className="text-xs text-slate-500">{opt.description}</div>}
               </div>
             </button>
           );
@@ -278,7 +379,7 @@ function QuestionPhase({
 function TransitionPhase({ messages, onContinue, speak }) {
   useEffect(() => {
     messages.forEach((msg, i) => {
-      setTimeout(() => speak(msg), i * 2000);
+      setTimeout(() => speak(msg), i * 800);
     });
   }, []);
 
@@ -310,11 +411,31 @@ function TransitionPhase({ messages, onContinue, speak }) {
   );
 }
 
-// ── Phase: Difficulty ───────────────────────────────────────────────
-function DifficultyPhase({ onAnswer, speak }) {
+// ── Phase: Difficulty (with mic) ────────────────────────────────────
+function DifficultyPhase({ onAnswer, speak, recognition }) {
+  const { isListening, transcript, isSupported, startListening, stopListening, resetTranscript } = recognition;
+  const lastProcessed = useRef('');
+
   useEffect(() => {
     speak(difficultyQuestion.text);
+    resetTranscript();
   }, []);
+
+  useEffect(() => {
+    if (!transcript || transcript === lastProcessed.current) return;
+    if (!isListening && transcript) {
+      lastProcessed.current = transcript;
+      const match = matchSpokenDifficulty(transcript);
+      if (match !== null) {
+        const label = difficultyQuestion.options.find(o => o.value === match)?.label;
+        speak(`I heard: ${label}.`);
+        setTimeout(() => onAnswer(match), 800);
+      } else {
+        speak("I didn't quite catch that. Try again or tap an option.");
+      }
+      resetTranscript();
+    }
+  }, [isListening, transcript]);
 
   return (
     <div className="w-full max-w-lg mx-auto">
@@ -325,6 +446,23 @@ function DifficultyPhase({ onAnswer, speak }) {
             One last question — {difficultyQuestion.text.toLowerCase()}
           </p>
         </div>
+      </div>
+
+      {/* Mic */}
+      <div className="flex justify-center mb-6" style={{ marginLeft: '3.25rem' }}>
+        <MicButton
+          isListening={isListening}
+          isSupported={isSupported}
+          onStart={startListening}
+          onStop={stopListening}
+          transcript={transcript}
+        />
+      </div>
+
+      <div className="flex items-center gap-3 mb-4" style={{ marginLeft: '3.25rem' }}>
+        <div className="flex-1 h-px bg-white/5" />
+        <span className="text-xs text-slate-600">or tap your answer</span>
+        <div className="flex-1 h-px bg-white/5" />
       </div>
 
       <div className="space-y-2" style={{ marginLeft: '3.25rem' }}>
@@ -358,8 +496,12 @@ function ResultsPhase({ phq9Result, gad7Result, difficulty, speak }) {
   useEffect(() => {
     if (showCrisis) {
       speak(personaTransitions.crisisDetected[0]);
+      setTimeout(() => speak(phq9Result.interpretation), 4000);
+      setTimeout(() => speak(gad7Result.interpretation), 8000);
     } else {
       speak("Here are your results. Remember, this is a starting point — not a diagnosis.");
+      setTimeout(() => speak(`For depression: your score is ${phq9Result.total} out of 27, which suggests ${phq9Result.severity.toLowerCase()} symptoms. ${phq9Result.recommendation}`), 4000);
+      setTimeout(() => speak(`For anxiety: your score is ${gad7Result.total} out of 21, which suggests ${gad7Result.severity.toLowerCase()} symptoms. ${gad7Result.recommendation}`), 10000);
     }
   }, []);
 
@@ -373,14 +515,14 @@ function ResultsPhase({ phq9Result, gad7Result, difficulty, speak }) {
   const handleDownload = () => {
     let text = 'WELLNESS CHECK-IN RESULTS\n';
     text += `Date: ${new Date().toLocaleDateString()}\n`;
-    text += '═'.repeat(50) + '\n\n';
+    text += '='.repeat(50) + '\n\n';
     text += `DEPRESSION SCREENING (PHQ-9)\n`;
     text += `Score: ${phq9Result.total}/27 — ${phq9Result.severity}\n`;
     text += `${phq9Result.interpretation}\n\n`;
     text += `ANXIETY SCREENING (GAD-7)\n`;
     text += `Score: ${gad7Result.total}/21 — ${gad7Result.severity}\n`;
     text += `${gad7Result.interpretation}\n\n`;
-    text += '═'.repeat(50) + '\n';
+    text += '='.repeat(50) + '\n';
     text += 'CRISIS RESOURCES\n';
     text += '988 Suicide & Crisis Lifeline: 988\n';
     text += 'Trevor Project: 1-866-488-7386\n';
@@ -401,65 +543,37 @@ function ResultsPhase({ phq9Result, gad7Result, difficulty, speak }) {
   function ScoreCard({ title, result }) {
     const c = colorMap[result.color];
     const pct = Math.round((result.total / result.maxScore) * 100);
-
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl border ${c.border} ${c.bg} p-5`}
-      >
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className={`rounded-2xl border ${c.border} ${c.bg} p-5`}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-white">{title}</h3>
-          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${c.bg} ${c.text} border ${c.border}`}>
-            {result.severity}
-          </span>
+          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${c.bg} ${c.text} border ${c.border}`}>{result.severity}</span>
         </div>
         <div className="flex items-end gap-2 mb-3">
           <span className={`text-3xl font-bold ${c.text}`}>{result.total}</span>
           <span className="text-sm text-slate-500 mb-1">/ {result.maxScore}</span>
         </div>
         <div className="h-2 bg-white/5 rounded-full overflow-hidden mb-4">
-          <motion.div
-            className={`h-full bg-gradient-to-r ${c.bar} rounded-full`}
-            initial={{ width: 0 }}
-            animate={{ width: `${pct}%` }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-          />
+          <motion.div className={`h-full bg-gradient-to-r ${c.bar} rounded-full`} initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8, delay: 0.3 }} />
         </div>
-        <p className="text-sm text-slate-300 leading-relaxed mb-2">
-          {result.interpretation}
-        </p>
-        <p className="text-sm text-slate-400 leading-relaxed">
-          {result.recommendation}
-        </p>
+        <p className="text-sm text-slate-300 leading-relaxed mb-2">{result.interpretation}</p>
+        <p className="text-sm text-slate-400 leading-relaxed">{result.recommendation}</p>
       </motion.div>
     );
   }
 
   return (
     <div className="w-full max-w-lg mx-auto">
-      {/* Crisis alert if needed */}
       {showCrisis && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6 p-5 rounded-2xl bg-red-500/8 border border-red-500/15"
-        >
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 p-5 rounded-2xl bg-red-500/8 border border-red-500/15">
           <div className="flex items-start gap-3">
             <AlertTriangle size={20} className="text-red-400 mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm text-red-200/90 font-medium mb-3">
-                Based on your responses, please know that support is available right now:
-              </p>
+              <p className="text-sm text-red-200/90 font-medium mb-3">Based on your responses, please know that support is available right now:</p>
               <div className="flex flex-wrap gap-2">
                 {crisisResources.map(r => (
-                  <a
-                    key={r.id}
-                    href={`tel:${r.phone?.replace(/[^0-9]/g, '')}`}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-red-500/15 hover:bg-red-500/25 rounded-full text-sm text-red-300 font-medium transition-colors"
-                  >
-                    <Phone size={12} />
-                    {r.name}: {r.phone}
+                  <a key={r.id} href={`tel:${r.phone?.replace(/[^0-9]/g, '')}`} className="flex items-center gap-1.5 px-3 py-2 bg-red-500/15 hover:bg-red-500/25 rounded-full text-sm text-red-300 font-medium transition-colors">
+                    <Phone size={12} />{r.name}: {r.phone}
                   </a>
                 ))}
               </div>
@@ -468,33 +582,22 @@ function ResultsPhase({ phq9Result, gad7Result, difficulty, speak }) {
         </motion.div>
       )}
 
-      {/* Sage message */}
       <div className="mb-6">
-        <SageMessage
-          text={showCrisis
-            ? "I'm glad you were honest. Let's look at the full picture together. Remember — these scores are a starting point, not a diagnosis."
-            : "Here are your results. These scores help paint a picture, but they're a starting point — not a diagnosis. Only a healthcare provider can make a clinical assessment."
-          }
-        />
+        <SageMessage text={showCrisis
+          ? "I'm glad you were honest. Let's look at the full picture together. Remember — these scores are a starting point, not a diagnosis."
+          : "Here are your results. These scores help paint a picture, but they're a starting point — not a diagnosis. Only a healthcare provider can make a clinical assessment."
+        } />
       </div>
 
-      {/* Score cards */}
       <div className="space-y-4 mb-8">
         <ScoreCard title="Depression Screening (PHQ-9)" result={phq9Result} />
         <ScoreCard title="Anxiety Screening (GAD-7)" result={gad7Result} />
       </div>
 
-      {/* Recommended resources */}
       {showTherapy && healthResources.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="mb-8"
-        >
+        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="mb-8">
           <h3 className="text-base font-semibold text-white mb-3 flex items-center gap-2">
-            <Heart size={16} className="text-violet-400" />
-            Recommended Resources
+            <Heart size={16} className="text-violet-400" />Recommended Resources
           </h3>
           <div className="space-y-2">
             {healthResources.map(r => (
@@ -502,16 +605,8 @@ function ResultsPhase({ phq9Result, gad7Result, difficulty, speak }) {
                 <h4 className="text-sm font-semibold text-white mb-1">{r.name}</h4>
                 <p className="text-xs text-slate-400 mb-2">{r.description}</p>
                 <div className="flex flex-wrap gap-2">
-                  {r.phone && (
-                    <a href={`tel:${r.phone.replace(/[^0-9]/g, '')}`} className="flex items-center gap-1 px-3 py-1.5 bg-violet-500/15 text-violet-300 rounded-full text-xs font-medium hover:bg-violet-500/25 transition-colors">
-                      <Phone size={11} />{r.phone}
-                    </a>
-                  )}
-                  {r.website && (
-                    <a href={r.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-1.5 bg-white/5 text-slate-400 rounded-full text-xs hover:bg-white/10 transition-colors">
-                      <ExternalLink size={11} />Website
-                    </a>
-                  )}
+                  {r.phone && <a href={`tel:${r.phone.replace(/[^0-9]/g, '')}`} className="flex items-center gap-1 px-3 py-1.5 bg-violet-500/15 text-violet-300 rounded-full text-xs font-medium hover:bg-violet-500/25 transition-colors"><Phone size={11} />{r.phone}</a>}
+                  {r.website && <a href={r.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-1.5 bg-white/5 text-slate-400 rounded-full text-xs hover:bg-white/10 transition-colors"><ExternalLink size={11} />Website</a>}
                 </div>
               </div>
             ))}
@@ -519,43 +614,13 @@ function ResultsPhase({ phq9Result, gad7Result, difficulty, speak }) {
         </motion.div>
       )}
 
-      {/* Actions */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.6 }}
-        className="flex flex-wrap gap-3 mb-6"
-      >
-        <button
-          onClick={handleDownload}
-          className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/15 rounded-full text-sm font-medium transition-colors"
-        >
-          <Download size={14} />
-          Download Results
-        </button>
-        <Link
-          to="/safety-plan"
-          className="flex items-center gap-2 px-4 py-2.5 bg-violet-600/80 hover:bg-violet-500 rounded-full text-sm font-medium transition-colors"
-        >
-          <Shield size={14} />
-          Create Safety Plan
-        </Link>
-        <Link
-          to="/chat"
-          className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 rounded-full text-sm font-medium transition-colors"
-        >
-          <MessageCircle size={14} />
-          Find More Resources
-        </Link>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="flex flex-wrap gap-3 mb-6">
+        <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/15 rounded-full text-sm font-medium transition-colors"><Download size={14} />Download Results</button>
+        <Link to="/safety-plan" className="flex items-center gap-2 px-4 py-2.5 bg-violet-600/80 hover:bg-violet-500 rounded-full text-sm font-medium transition-colors"><Shield size={14} />Create Safety Plan</Link>
+        <Link to="/chat" className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 rounded-full text-sm font-medium transition-colors"><MessageCircle size={14} />Find More Resources</Link>
       </motion.div>
 
-      {/* Disclaimer */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.8 }}
-        className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10"
-      >
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }} className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10">
         <p className="text-xs text-amber-200/60 leading-relaxed">
           <strong className="text-amber-300/80">Disclaimer:</strong> The PHQ-9 and GAD-7 are validated screening tools, not diagnostic instruments.
           They help identify symptoms that may warrant further evaluation by a qualified healthcare professional.
@@ -583,17 +648,22 @@ export default function WellnessCheckPage() {
   const [answers, setAnswers] = useState({});
   const [currentQ, setCurrentQ] = useState(0);
   const [difficulty, setDifficulty] = useState(null);
-  const { speak, stop, isSpeaking, isEnabled, toggle } = useSpeech();
+  const [showSettings, setShowSettings] = useState(false);
+  const { speak, speakNow, stop, isSpeaking, isEnabled, toggle, mode, settings, updateSettings } = useSpeech();
+  const recognition = useSpeechRecognition();
   const containerRef = useRef(null);
 
   const scrollTop = () => {
     containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleAnswer = useCallback((qId, value) => {
+    // Stop listening if active
+    recognition.stopListening();
+
     setAnswers(prev => ({ ...prev, [qId]: value }));
 
-    // Auto-advance after selection with a brief pause
     setTimeout(() => {
       if (phase === PHASES.PHQ9) {
         if (currentQ < phq9Questions.length - 1) {
@@ -613,7 +683,7 @@ export default function WellnessCheckPage() {
         }
       }
     }, 400);
-  }, [phase, currentQ]);
+  }, [phase, currentQ, recognition]);
 
   const handleBack = useCallback(() => {
     if (currentQ > 0) {
@@ -624,6 +694,7 @@ export default function WellnessCheckPage() {
 
   const handleRestart = () => {
     stop();
+    recognition.stopListening();
     setPhase(PHASES.WELCOME);
     setAnswers({});
     setCurrentQ(0);
@@ -634,8 +705,6 @@ export default function WellnessCheckPage() {
   const phq9Result = phase === PHASES.RESULTS ? scorePHQ9(answers) : null;
   const gad7Result = phase === PHASES.RESULTS ? scoreGAD7(answers) : null;
 
-  const currentQuestions = phase === PHASES.PHQ9 ? phq9Questions : gad7Questions;
-
   return (
     <div className="hero-gradient min-h-screen pt-20 pb-16">
       {/* Header bar */}
@@ -644,8 +713,20 @@ export default function WellnessCheckPage() {
           <span className="text-lg">🌿</span>
           <span className="text-sm font-semibold text-white">Sage</span>
           <span className="text-xs text-slate-500">Wellness Check-In</span>
+          {mode === 'elevenlabs' && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+              Premium Voice
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-500 hover:text-white hover:bg-white/5 transition-colors"
+            title="Voice settings"
+          >
+            <Settings size={13} />
+          </button>
           <button
             onClick={toggle}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
@@ -653,18 +734,22 @@ export default function WellnessCheckPage() {
                 ? 'bg-violet-500/15 text-violet-300'
                 : 'bg-white/5 text-slate-500 hover:text-slate-300'
             }`}
-            title={isEnabled ? 'Disable voice' : 'Enable voice'}
           >
             {isEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
             {isEnabled ? 'Voice On' : 'Voice Off'}
           </button>
+          {recognition.isSupported && (
+            <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-cyan-500/10 text-cyan-400">
+              <Mic size={12} />
+              <span className="hidden sm:inline">Mic Ready</span>
+            </div>
+          )}
           {phase !== PHASES.WELCOME && (
             <button
               onClick={handleRestart}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
             >
               <RotateCcw size={13} />
-              Start Over
             </button>
           )}
         </div>
@@ -677,16 +762,14 @@ export default function WellnessCheckPage() {
       </div>
 
       {/* Main content */}
-      <div
-        ref={containerRef}
-        className="max-w-2xl mx-auto px-4"
-      >
+      <div ref={containerRef} className="max-w-2xl mx-auto px-4">
         <AnimatePresence mode="wait">
           {phase === PHASES.WELCOME && (
             <motion.div key="welcome" exit={{ opacity: 0, y: -20 }}>
               <WelcomePhase
                 onStart={() => { setPhase(PHASES.PHQ9_INTRO); scrollTop(); }}
                 speak={speak}
+                isSpeaking={isSpeaking}
               />
             </motion.div>
           )}
@@ -714,6 +797,7 @@ export default function WellnessCheckPage() {
                 canGoBack={currentQ > 0}
                 speak={speak}
                 speaking={isSpeaking}
+                recognition={recognition}
               />
             </motion.div>
           )}
@@ -741,6 +825,7 @@ export default function WellnessCheckPage() {
                 canGoBack={currentQ > 0}
                 speak={speak}
                 speaking={isSpeaking}
+                recognition={recognition}
               />
             </motion.div>
           )}
@@ -749,11 +834,13 @@ export default function WellnessCheckPage() {
             <motion.div key="difficulty" exit={{ opacity: 0, y: -20 }}>
               <DifficultyPhase
                 onAnswer={(val) => {
+                  recognition.stopListening();
                   setDifficulty(val);
                   setPhase(PHASES.RESULTS_INTRO);
                   scrollTop();
                 }}
                 speak={speak}
+                recognition={recognition}
               />
             </motion.div>
           )}
@@ -780,6 +867,15 @@ export default function WellnessCheckPage() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Voice Settings Modal */}
+      <VoiceSettings
+        settings={settings}
+        updateSettings={updateSettings}
+        mode={mode}
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </div>
   );
 }
