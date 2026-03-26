@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: 'Playfair Display', serif;
+  --font-sans: 'Inter', sans-serif;
+  --color-pride-red: #E40303;
+  --color-pride-orange: #FF8C00;
+  --color-pride-yellow: #FFED00;
+  --color-pride-green: #008026;
+  --color-pride-blue: #24408E;
+  --color-pride-purple: #732982;
+  --color-pride-pink: #FFAFC8;
+  --color-pride-ltblue: #74D7EE;
+  --color-pride-white: #FFFFFF;
+  --color-pride-brown: #613915;
+  --color-pride-black: #000000;
+}
+
+/* Pride gradient stripe bar */
+.pride-bar {
+  background: linear-gradient(
+    90deg,
+    #E40303 0%, #E40303 16.66%,
+    #FF8C00 16.66%, #FF8C00 33.33%,
+    #FFED00 33.33%, #FFED00 50%,
+    #008026 50%, #008026 66.66%,
+    #24408E 66.66%, #24408E 83.33%,
+    #732982 83.33%, #732982 100%
+  );
+}
+
+.pride-gradient-text {
+  background: linear-gradient(135deg, #e879f9, #8b5cf6, #06b6d4, #34d399);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-gradient {
+  background: radial-gradient(ellipse at 30% 0%, rgba(139, 92, 246, 0.15) 0%, transparent 60%),
+              radial-gradient(ellipse at 70% 100%, rgba(6, 182, 212, 0.1) 0%, transparent 60%),
+              radial-gradient(ellipse at 0% 50%, rgba(232, 121, 249, 0.08) 0%, transparent 50%);
+}
+
+.glass {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+/* Pulse animation for crisis button */
+@keyframes crisis-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  50% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+}
+.crisis-pulse {
+  animation: crisis-pulse 2s ease-in-out infinite;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
