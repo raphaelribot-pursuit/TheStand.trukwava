@@ -76,12 +76,19 @@ export default function HomePage() {
               In Crisis? Call 988
             </a>
             <Link
+              to="/chat"
+              className="flex items-center gap-2 px-6 py-3.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 rounded-full text-base font-semibold transition-all shadow-lg shadow-violet-600/25"
+            >
+              <MessageCircle size={18} />
+              Chat — Get Help Now
+              <ArrowRight size={16} />
+            </Link>
+            <Link
               to="/resources"
               className="flex items-center gap-2 px-6 py-3.5 bg-white/10 hover:bg-white/15 border border-white/10 rounded-full text-base font-semibold transition-all"
             >
               <Search size={18} />
-              Find Resources
-              <ArrowRight size={16} />
+              Browse Resources
             </Link>
           </motion.div>
         </div>

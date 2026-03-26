@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Phone, Menu, X, Heart, Shield, BookOpen, Home, Search, FileText } from 'lucide-react';
+import { Phone, Menu, X, Heart, Shield, BookOpen, Home, Search, FileText, MessageCircle } from 'lucide-react';
 
 const navLinks = [
   { to: '/', label: 'Home', icon: Home },
+  { to: '/chat', label: 'Get Help', icon: MessageCircle },
   { to: '/crisis', label: 'Crisis Lines', icon: Phone },
   { to: '/resources', label: 'Resources', icon: Search },
   { to: '/safety-plan', label: 'Safety Plan', icon: Shield },

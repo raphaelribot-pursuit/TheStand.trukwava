@@ -8,6 +8,7 @@ import CrisisPage from './pages/CrisisPage';
 import ResourcesPage from './pages/ResourcesPage';
 import SafetyPlanPage from './pages/SafetyPlanPage';
 import RightsPage from './pages/RightsPage';
+import ChatPage from './pages/ChatPage';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -30,6 +31,7 @@ function App() {
             <Route path="/resources" element={<ResourcesPage />} />
             <Route path="/safety-plan" element={<SafetyPlanPage />} />
             <Route path="/rights" element={<RightsPage />} />
+            <Route path="/chat" element={<ChatPage />} />
           </Routes>
         </main>
         <Footer />
